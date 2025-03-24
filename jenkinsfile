@@ -1,0 +1,72 @@
+pipeline {
+	agent any
+	tools {
+	jdk 'jdk17'
+	nodejs 'nodejs'
+	}
+	environment {
+		SCANNER_HOME = tool 'mysonar'
+	}
+	stages {
+		stage ("Clean WS") {
+			steps {
+				cleanWs()
+			}
+		}
+		stage ("code") {
+			steps {
+				git 'https://github.com/DOCKER-PROJECTS-FOR-DEVOPS/DevSecOps_Project.git'
+			}
+		}
+		stage ("CQA") {
+			steps {
+				withSonarQubeEnv('mysonar') {
+					sh """$SCANNER_HOME/bin/sonar-scanner \
+					-Dsonar.projectName=zomato \
+					-Dsonar.projectKey=zomato"""				
+				}
+			}
+		}
+		stage ("Build") {
+			steps {
+				sh 'npm install'
+			}
+		}
+		stage ("OWASP") {
+			steps {
+				dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation:'DP-Check'
+				dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+
+			}
+		}
+		stage ("DockerImageBuild") {
+			steps {
+				sh "docker build -t kishorech48/devsecops:myproject ."
+			}
+		}
+		stage ("TrivyFileSystem") {
+			steps {
+				sh "trivy fs . > trivyfs.txt"
+			}
+		}
+		stage ("ImageScan") {
+			steps {
+				sh 'trivy image kishorech48/devsecops:myproject'
+			}
+		}
+		stage ("DockerImage") {
+			steps {
+				script {
+					withDockerRegistry(credentialsId: 'dockerhub') {
+					sh 'docker push kishorech48/devsecops:myproject'
+					}
+				}
+			}
+		}
+		stage ("Container") {
+			steps {
+				sh 'docker run -itd --name cont1 -p 3000:3000 kishorech48/devsecops:myproject'
+			}
+		}
+	}
+}
